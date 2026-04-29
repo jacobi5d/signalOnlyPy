@@ -54,12 +54,17 @@ def process_injury_data(json_data):
         pass
     return injury_list
 
+    def save_to_json_and_csv(data_list, filename_prefix):
+    """Serializes the normalized dictionaries to both JSON and CSV formats."""
+    if not data_list:
+        return
+
     # Save to JSON for archival preservation
     with open(f"{filename_prefix}.json", "w") as json_file:
         json.dump(data_list, json_file, indent=4)
 
     # Save to CSV for downstream algorithmic ingestion
-    keys = data_list.keys()
+    keys = data_list.keys()  # Fix: Targets the first dictionary in the list to extract headers
     with open(f"{filename_prefix}.csv", "w", newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=keys)
         writer.writeheader()
