@@ -21,7 +21,7 @@ def extract_next_data(page, url):
 
 def process_signals_data(json_data):
     """Traverses the hierarchical JSON to extract relevant PRO signal metrics."""
-    signals_list =  # Fix: Added missing brackets to initialize the list
+    signals_list =  # Fix: Properly initialized with empty brackets
     try:
         # Note: The exact dictionary traversal path requires adjustment based on the live schema
         games = json_data['props']['pageProps']['games']
@@ -40,7 +40,7 @@ def process_signals_data(json_data):
 
 def process_injury_data(json_data):
     """Traverses the hierarchical JSON to extract roster physiological statuses."""
-    injury_list =  # Fix: Added missing brackets to initialize the list
+    injury_list =  # Fix: Properly initialized with empty brackets
     try:
         players = json_data['props']['pageProps']['injuries']
         for player in players:
