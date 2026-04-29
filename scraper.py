@@ -1,136 +1,110 @@
-import requests
-from bs4 import BeautifulSoup
-import csv
-import json
 import os
-from datetime import datetime
+import json
+import csv
+from playwright.sync_api import sync_playwright
 
-# ==========================================
-# CONFIGURATION
-# ==========================================
-# Target URL for Action Network Pro Signals
-URL = "https://www.actionnetwork.com/pro/signals"
+# Define target endpoints
+LOGIN_URL = "https://www.actionnetwork.com/login"
+SIGNALS_URL = "https://www.actionnetwork.com/pro-systems/discover"
+INJURY_URL = "https://www.actionnetwork.com/nfl/injuries"
 
-# You MUST provide your session cookie to access Pro data.
-# Log into Action Network in your browser, open DevTools (F12) -> Network, 
-# refresh the page, click the main document request, and copy the 'cookie' string from Request Headers.
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Cookie": "YOUR_PRO_SESSION_COOKIE_HERE" # <-- PASTE COOKIE HERE
-}
+def extract_next_data(page, url):
+    """Navigates to the target URL and extracts the __NEXT_DATA__ JSON payload."""
+    page.goto(url, wait_until="networkidle")
+    
+    # Locate the hydration script tag utilized by Next.js
+    script_element = page.locator("script#__NEXT_DATA__")
+    if script_element.count() > 0:
+        raw_json = script_element.inner_text()
+        return json.loads(raw_json)
+    return None
 
-# Output files
-CSV_FILENAME = "action_signals.csv"
-JSON_FILENAME = "action_signals.json"
-
-# ==========================================
-# SCRAPING LOGIC
-# ==========================================
-def fetch_page(url, headers):
-    """Fetches the HTML content of the page."""
-    print(f"Fetching data from {url}...")
+def process_signals_data(json_data):
+    """Traverses the hierarchical JSON to extract relevant PRO signal metrics."""
+    signals_list =
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching the page: {e}")
-        return None
+        # Note: The exact dictionary traversal path requires adjustment based on the live schema
+        games = json_data['props']['pageProps']['games']
+        for game_id, game_data in games.items():
+            signals_list.append({
+                'game_id': game_id,
+                'home_team': game_data.get('home_team_name', 'N/A'),
+                'away_team': game_data.get('away_team_name', 'N/A'),
+                'public_betting_pct': game_data.get('public_betting_pct', 0),
+                'sharp_action_flag': game_data.get('sharp_action', False),
+                'money_pct': game_data.get('money_pct', 0)
+            })
+    except KeyError:
+        pass
+    return signals_list
 
-def parse_signals(html_content):
-    """Parses the HTML and extracts the betting splits and signals."""
-    soup = BeautifulSoup(html_content, 'html.parser')
-    scraped_data = []
+def process_injury_data(json_data):
+    """Traverses the hierarchical JSON to extract roster physiological statuses."""
+    injury_list =
+    try:
+        players = json_data['props']['pageProps']['injuries']
+        for player in players:
+            injury_list.append({
+                'player_name': player.get('full_name', 'N/A'),
+                'team': player.get('team_name', 'N/A'),
+                'status': player.get('status', 'N/A'),
+                'description': player.get('description', 'N/A')
+            })
+    except KeyError:
+        pass
+    return injury_list
 
-    # NOTE: These CSS selectors (.game-row, .team-name, etc.) are placeholders.
-    # Action Network frequently updates their React class names. 
-    # Inspect the page and update these classes to match the current DOM.
-    game_rows = soup.select('.game-row-class-placeholder') 
-    
-    if not game_rows:
-        print("Warning: No game rows found. Check your CSS selectors or your authentication cookie.")
-
-    for row in game_rows:
-        try:
-            # Extract Matchup
-            away_team = row.select_one('.away-team-class').text.strip()
-            home_team = row.select_one('.home-team-class').text.strip()
-            matchup = f"{away_team} @ {home_team}"
-
-            # Extract ATS Splits
-            ats_bet_pct = row.select_one('.ats-bet-pct-class').text.strip()
-            ats_handle_pct = row.select_one('.ats-handle-pct-class').text.strip()
-            
-            # Extract TOTAL Splits
-            total_bet_pct = row.select_one('.total-bet-pct-class').text.strip()
-            total_handle_pct = row.select_one('.total-handle-pct-class').text.strip()
-
-            # Extract Line Movement & RLM (Reverse Line Movement)
-            line_movement = row.select_one('.line-movement-class').text.strip()
-            rlm_indicator = row.select_one('.rlm-indicator-class')
-            rlm = "Yes" if rlm_indicator else "No"
-
-            # Extract Pro Signals (Sharp Action, Big Money, etc.)
-            signals_elements = row.select('.pro-signal-icon-class')
-            signals = [sig['title'] for sig in signals_elements if sig.has_attr('title')]
-
-            # Build the data dictionary
-            game_data = {
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Matchup": matchup,
-                "ATS_%Bets": ats_bet_pct,
-                "ATS_%Handle": ats_handle_pct,
-                "TOTAL_%Bets": total_bet_pct,
-                "TOTAL_%Handle": total_handle_pct,
-                "Line_Movement": line_movement,
-                "RLM": rlm,
-                "Active_Signals": ", ".join(signals)
-            }
-            scraped_data.append(game_data)
-
-        except AttributeError as e:
-            # Skips rows that might be missing data or are ad blocks
-            print(f"Skipping a row due to missing elements: {e}")
-            continue
-
-    return scraped_data
-
-# ==========================================
-# EXPORT LOGIC
-# ==========================================
-def save_to_csv(data, filename):
-    """Saves the list of dictionaries to a CSV file."""
-    if not data:
+def save_to_json_and_csv(data_list, filename_prefix):
+    """Serializes the normalized dictionaries to both JSON and CSV formats."""
+    if not data_list:
         return
-    
-    keys = data[0].keys()
-    with open(filename, 'w', newline='', encoding='utf-8') as f:
-        dict_writer = csv.DictWriter(f, fieldnames=keys)
-        dict_writer.writeheader()
-        dict_writer.writerows(data)
-    print(f"Successfully saved {len(data)} records to {filename}")
 
-def save_to_json(data, filename):
-    """Saves the list of dictionaries to a JSON file."""
-    if not data:
-        return
-        
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4)
-    print(f"Successfully saved {len(data)} records to {filename}")
+    # Save to JSON for archival preservation
+    with open(f"{filename_prefix}.json", "w") as json_file:
+        json.dump(data_list, json_file, indent=4)
 
-# ==========================================
-# MAIN EXECUTION
-# ==========================================
+    # Save to CSV for downstream algorithmic ingestion
+    keys = data_list.keys()
+    with open(f"{filename_prefix}.csv", "w", newline='') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(data_list)
+
+def main():
+    email = os.environ.get("ACTION_EMAIL")
+    password = os.environ.get("ACTION_PASSWORD")
+
+    if not email or not password:
+        raise ValueError("Critical Security Error: Credentials not found in environment.")
+
+    with sync_playwright() as p:
+        # Launch Chromium. In production, proxy arguments would be appended here.
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
+
+        # Step 1: Execute Authentication Sequence
+        page.goto(LOGIN_URL, wait_until="networkidle")
+        page.locator('input[name="email"]').fill(email)
+        page.locator('input[name="password"]').fill(password)
+        page.locator('button[type="submit"]').click()
+        page.wait_for_load_state("networkidle")
+
+        # Step 2: Extract PRO Signals Data
+        signals_json = extract_next_data(page, SIGNALS_URL)
+        if signals_json:
+            processed_signals = process_signals_data(signals_json)
+            save_to_json_and_csv(processed_signals, "signals_data")
+
+        # Step 3: Extract Injury Report Data
+        injury_json = extract_next_data(page, INJURY_URL)
+        if injury_json:
+            processed_injuries = process_injury_data(injury_json)
+            save_to_json_and_csv(processed_injuries, "injury_data")
+
+        browser.close()
+
 if __name__ == "__main__":
-    html = fetch_page(URL, HEADERS)
-    
-    if html:
-        extracted_data = parse_signals(html)
-        
-        if extracted_data:
-            save_to_csv(extracted_data, CSV_FILENAME)
-            save_to_json(extracted_data, JSON_FILENAME)
-        else:
-            print("No data extracted. Process finished.")
+    main()
