@@ -40,7 +40,7 @@ def process_signals_data(json_data):
 
 def process_injury_data(json_data):
     """Traverses the hierarchical JSON to extract roster physiological statuses."""
-    injury_list =  # Fix: Properly initialized with empty brackets
+    injury_list = []  # Fix: Properly initialized with empty brackets
     try:
         players = json_data['props']['pageProps']['injuries']
         for player in players:
