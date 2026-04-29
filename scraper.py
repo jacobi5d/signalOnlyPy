@@ -54,8 +54,9 @@ def process_injury_data(json_data):
         pass
     return injury_list
 
-    def save_to_json_and_csv(data_list, filename_prefix):
+    def serialize_data(data_list)                      ): 
     """Serializes the normalized dictionaries to both JSON and CSV formats."""
+    # ... make sure the rest of the code in this function is also indented! ...
     if not data_list:
         return
 
