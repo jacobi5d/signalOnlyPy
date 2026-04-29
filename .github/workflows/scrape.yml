@@ -31,8 +31,7 @@ jobs:
           ACTION_PASSWORD: ${{ secrets.ACTION_PASSWORD }}
         run: |
           python scraper.py
-
-      - - name: Upload Extracted Artifacts
+      - name: Upload Extracted Artifacts 
         uses: actions/upload-artifact@v4
         with:
           name: sports-analytics-data
