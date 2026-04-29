@@ -54,9 +54,8 @@ def process_injury_data(json_data):
         pass
     return injury_list
 
-    def serialize_data(data_list)                      ): 
+def serialize_data(data_list, filename_prefix): 
     """Serializes the normalized dictionaries to both JSON and CSV formats."""
-    # ... make sure the rest of the code in this function is also indented! ...
     if not data_list:
         return
 
@@ -65,7 +64,7 @@ def process_injury_data(json_data):
         json.dump(data_list, json_file, indent=4)
 
     # Save to CSV for downstream algorithmic ingestion
-    keys = data_list.keys()  # Fix: Targets the first dictionary in the list to extract headers
+    keys = data_list[0].keys()  # Fix: Targets the first dictionary in the list to extract headers
     with open(f"{filename_prefix}.csv", "w", newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=keys)
         writer.writeheader()
@@ -97,13 +96,13 @@ def main():
         signals_json = extract_next_data(page, SIGNALS_URL)
         if signals_json:
             processed_signals = process_signals_data(signals_json)
-            save_to_json_and_csv(processed_signals, "signals_data")
+            serialize_data(processed_signals, "signals_data") # Fix: Call the correct function name
 
         # Step 3: Extract Injury Report Data
         injury_json = extract_next_data(page, INJURY_URL)
         if injury_json:
             processed_injuries = process_injury_data(injury_json)
-            save_to_json_and_csv(processed_injuries, "injury_data")
+            serialize_data(processed_injuries, "injury_data") # Fix: Call the correct function name
 
         browser.close()
 
